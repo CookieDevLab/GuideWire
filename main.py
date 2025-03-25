@@ -38,17 +38,43 @@ app = Flask(__name__)
 with open("kubernetes_model.pkl", "rb") as model_file:
     loaded_model = pickle.load(model_file)
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Kubernetes Issue Prediction API is running!", 200
+EXPECTED_FEATURES = [
+    "CPU_Usage", "Memory_Usage", "Disk_IO", "Network_Latency", 
+    "Pod_Restarts", "Node_Availability", "Error_Logs"
+]
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    data = request.get_json()
-    input_features = pd.DataFrame([data])
-    prediction = loaded_model.predict(input_features)[0]
-    predicted_label = [key for key, value in label_mapping.items() if value == prediction][0]
-    return jsonify({"prediction": predicted_label})
+    try:
+        data = request.get_json()
+        print("Received JSON:", data) 
+
+        if not data:
+            return jsonify({"error": "No JSON received"}), 400
+
+        EXPECTED_FEATURES = [
+            "CPU_Usage", "Memory_Usage", "Disk_IO", "Network_Latency",
+            "Pod_Restarts", "Node_Availability", "Error_Logs"
+        ]
+
+        formatted_data = {key.title().replace("_", ""): value for key, value in data.items()}
+        formatted_df = pd.DataFrame([formatted_data])
+
+        missing_features = [col for col in EXPECTED_FEATURES if col not in formatted_df.columns]
+        if missing_features:
+            return jsonify({"error": f"Missing required features: {missing_features}"}), 400
+
+        formatted_df = formatted_df[EXPECTED_FEATURES]
+
+        formatted_df = formatted_df.apply(pd.to_numeric, errors="coerce")
+
+        prediction = loaded_model.predict(formatted_df)[0]
+
+        return jsonify({"prediction": int(prediction)})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True)
